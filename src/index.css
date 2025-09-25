@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* Custom properties */
+:root {
+  --radius: 0.625rem;
+}
+
+@layer base {
+  * {
+    @apply border-gray-200 outline-none;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+}
