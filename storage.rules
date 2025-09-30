@@ -1,0 +1,103 @@
+rules_version = '2';
+
+// Firebase Storage Rules for Trading Journal Application
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Function to check if user owns the resource
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Function to validate file size (max 10MB for documents, 5MB for images)
+    function isValidFileSize(maxSize) {
+      return request.resource.size <= maxSize;
+    }
+    
+    // Function to validate image file types
+    function isValidImageType() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|gif|webp)');
+    }
+    
+    // Function to validate document file types
+    function isValidDocumentType() {
+      return request.resource.contentType.matches('(application/pdf|text/csv|application/vnd.ms-excel|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)');
+    }
+    
+    // Trading Journal Data Storage Rules
+    // Path: /users/{userId}/trades/{tradeId}/{files}
+    match /users/{userId}/trades/{tradeId}/{allPaths=**} {
+      // Allow read/write only if user is authenticated and owns the data
+      allow read, write: if isAuthenticated() && isOwner(userId);
+      
+      // Additional write restrictions for file uploads
+      allow write: if isAuthenticated() 
+                   && isOwner(userId)
+                   && (
+                     (isValidImageType() && isValidFileSize(5 * 1024 * 1024)) || // 5MB for images
+                     (isValidDocumentType() && isValidFileSize(10 * 1024 * 1024)) // 10MB for documents
+                   );
+    }
+    
+    // Stock Market Data Storage Rules
+    // Path: /users/{userId}/stocks/{stockSymbol}/{files}
+    match /users/{userId}/stocks/{stockSymbol}/{allPaths=**} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+      
+      allow write: if isAuthenticated() 
+                   && isOwner(userId)
+                   && (
+                     (isValidImageType() && isValidFileSize(5 * 1024 * 1024)) ||
+                     (isValidDocumentType() && isValidFileSize(10 * 1024 * 1024))
+                   );
+    }
+    
+    // User Profile Pictures
+    // Path: /users/{userId}/profile/{fileName}
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() 
+                   && isOwner(userId)
+                   && isValidImageType()
+                   && isValidFileSize(2 * 1024 * 1024); // 2MB for profile pictures
+    }
+    
+    // Reports and Analytics Storage
+    // Path: /users/{userId}/reports/{reportId}/{files}
+    match /users/{userId}/reports/{reportId}/{allPaths=**} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+      
+      allow write: if isAuthenticated() 
+                   && isOwner(userId)
+                   && isValidDocumentType()
+                   && isValidFileSize(20 * 1024 * 1024); // 20MB for reports
+    }
+    
+    // Backup Storage
+    // Path: /users/{userId}/backups/{backupId}/{files}
+    match /users/{userId}/backups/{backupId}/{allPaths=**} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+      
+      allow write: if isAuthenticated() 
+                   && isOwner(userId)
+                   && isValidFileSize(50 * 1024 * 1024); // 50MB for backups
+    }
+    
+    // Public shared reports (read-only for authenticated users)
+    // Path: /public/reports/{reportId}/{files}
+    match /public/reports/{reportId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if false; // No public writes allowed
+    }
+    
+    // Deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

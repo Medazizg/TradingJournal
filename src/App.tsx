@@ -8,7 +8,7 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 import type { User } from "firebase/auth";
-import TradingJournal from "./components/TradingJournal";
+import SimpleTradingJournal from "./components/SimpleTradingJournal";
 import { LogOutIcon, MenuIcon, XIcon, MoonIcon, SunIcon } from "lucide-react";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import catLogo from "./assets/catpdp.jpg";
@@ -239,11 +239,11 @@ function AppContent() {
         
         {/* Main Content with left margin */}
         <div className="ml-16 flex-1 relative">
-          <TradingJournal />
+          <SimpleTradingJournal />
           
           {/* Smart Floating Add Trade Button */}
           <div className="fixed bottom-6 right-6 z-50" id="smart-add-button">
-            {/* Button will be controlled by TradingJournal component */}
+            {/* Button will be controlled by SimpleTradingJournal component */}
           </div>
         </div>
       </div>
@@ -534,7 +534,7 @@ function AppContent() {
             
             {/* Main Content */}
             <main className="flex-1 overflow-auto">
-              <TradingJournal />
+              <SimpleTradingJournal />
             </main>
 
             {/* Footer with Logout Button */}
