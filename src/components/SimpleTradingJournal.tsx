@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   PlusIcon, 
-  EditIcon, 
-  Trash2Icon, 
   MoonIcon,
   SunIcon,
   CalendarIcon,
@@ -17,6 +15,8 @@ import {
 } from 'lucide-react';
 import HistoricalAnalyticsComponent from './HistoricalAnalytics';
 import MonthlyTargetsComponent from './MonthlyTargets';
+import PositionSizeCalculator from './PositionSizeCalculator';
+import EnhancedTradesSection from './EnhancedTradesSection';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { 
@@ -68,7 +68,7 @@ export default function SimpleTradingJournal() {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState<'day' | 'week' | 'month'>('day');
-  const [activeTab, setActiveTab] = useState<'journal' | 'analytics' | 'targets'>('journal');
+  const [activeTab, setActiveTab] = useState<'journal' | 'analytics' | 'targets' | 'calculator'>('journal');
   const [dailyTarget, setDailyTarget] = useState<DailyTarget>({
     dailyPnLTarget: 100,
     dailyTradesTarget: 5,
@@ -405,11 +405,12 @@ export default function SimpleTradingJournal() {
             {[
               { id: 'journal', label: '📊 Trading Journal', icon: BarChartIcon },
               { id: 'analytics', label: '📈 Historical Analytics', icon: ActivityIcon },
-              { id: 'targets', label: '🎯 Monthly Targets', icon: TargetIcon }
+              { id: 'targets', label: '🎯 Monthly Targets', icon: TargetIcon },
+              { id: 'calculator', label: '🧮 Position Calculator', icon: DollarSignIcon }
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as 'journal' | 'analytics' | 'targets')}
+                onClick={() => setActiveTab(tab.id as 'journal' | 'analytics' | 'targets' | 'calculator')}
                 className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
                   activeTab === tab.id
                     ? 'bg-blue-600 text-white shadow-md transform scale-105'
@@ -950,243 +951,15 @@ export default function SimpleTradingJournal() {
           </div>
         )}
 
-        {/* Trades Table */}
-        <div className={`rounded-xl shadow-lg border transition-colors duration-300 overflow-hidden ${
-          darkMode 
-            ? 'bg-gray-800 border-gray-700' 
-            : 'bg-white border-gray-200'
-        }`}>
-          <div className={`p-6 border-b transition-colors ${
-            darkMode ? 'border-gray-700' : 'border-gray-200'
-          }`}>
-            <div className="flex items-center justify-between">
-              <h2 className={`text-xl font-semibold flex items-center ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}>
-                <BarChartIcon className="h-6 w-6 mr-2 text-blue-500" />
-                📋 Your Trades
-              </h2>
-              {trades.length > 0 && (
-                <div className={`text-sm px-3 py-1 rounded-full ${
-                  darkMode 
-                    ? 'bg-blue-900/30 text-blue-300'
-                    : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {trades.length} total trades
-                </div>
-              )}
-            </div>
-          </div>
-
-          {trades.length === 0 ? (
-            <div className={`p-12 text-center ${
-              darkMode ? 'text-gray-400' : 'text-gray-500'
-            }`}>
-              <div className="mb-4">
-                <BarChartIcon className={`h-16 w-16 mx-auto ${
-                  darkMode ? 'text-gray-600' : 'text-gray-300'
-                }`} />
-              </div>
-              <p className="text-xl mb-2 font-medium">No trades found</p>
-              <p className="mb-6">Add your first trade to get started on your trading journey!</p>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-medium transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-              >
-                <PlusIcon className="h-5 w-5 inline mr-2" />
-                Add Your First Trade
-              </button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className={`transition-colors ${
-                  darkMode ? 'bg-gray-700/50' : 'bg-gray-50'
-                }`}>
-                  <tr>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      📅 Date
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      📈 Symbol
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      🔄 Type
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      🟢 Entry
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      🔴 Exit
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      💰 P&L
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      💸 Fees
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      🎯 Net P&L
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      📝 Notes
-                    </th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
-                      darkMode ? 'text-gray-300' : 'text-gray-500'
-                    }`}>
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y transition-colors ${
-                  darkMode 
-                    ? 'bg-gray-800 divide-gray-700' 
-                    : 'bg-white divide-gray-200'
-                }`}>
-                  {trades.map((trade, index) => (
-                    <tr 
-                      key={trade.id} 
-                      className={`transition-all duration-200 ${
-                        darkMode 
-                          ? 'hover:bg-gray-700/50' 
-                          : 'hover:bg-gray-50'
-                      } ${index % 2 === 0 && darkMode ? 'bg-gray-800/50' : ''}`}
-                    >
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
-                        darkMode ? 'text-gray-300' : 'text-gray-900'
-                      }`}>
-                        <div className="flex items-center">
-                          <CalendarIcon className="h-4 w-4 mr-2 text-gray-400" />
-                          {new Date(trade.date).toLocaleDateString()}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${
-                        darkMode ? 'text-white' : 'text-gray-900'
-                      }`}>
-                        <div className="flex items-center">
-                          <span className={`w-2 h-2 rounded-full mr-2 ${
-                            trade.netPL >= 0 ? 'bg-green-400' : 'bg-red-400'
-                          }`}></span>
-                          {trade.symbol}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
-                          trade.type === 'Buy' 
-                            ? darkMode
-                              ? 'bg-green-900/50 text-green-300 border border-green-700'
-                              : 'bg-green-100 text-green-800 border border-green-200'
-                            : darkMode
-                              ? 'bg-red-900/50 text-red-300 border border-red-700'
-                              : 'bg-red-100 text-red-800 border border-red-200'
-                        }`}>
-                          {trade.type === 'Buy' ? '🟢' : '🔴'} {trade.type}
-                        </span>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
-                        darkMode ? 'text-gray-300' : 'text-gray-900'
-                      }`}>
-                        {formatCurrency(trade.entry)}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
-                        darkMode ? 'text-gray-300' : 'text-gray-900'
-                      }`}>
-                        {formatCurrency(trade.exit)}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${
-                        trade.plAmount >= 0 
-                          ? 'text-green-500' 
-                          : 'text-red-500'
-                      }`}>
-                        <div className="flex items-center">
-                          {trade.plAmount >= 0 
-                            ? <TrendUp className="h-4 w-4 mr-1" />
-                            : <TrendDown className="h-4 w-4 mr-1" />
-                          }
-                          {formatCurrency(trade.plAmount)}
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm ${
-                        darkMode ? 'text-gray-400' : 'text-gray-600'
-                      }`}>
-                        {formatCurrency(trade.fees)}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${
-                        trade.netPL >= 0 
-                          ? 'text-green-500' 
-                          : 'text-red-500'
-                      }`}>
-                        <div className={`flex items-center px-2 py-1 rounded-lg ${
-                          trade.netPL >= 0 
-                            ? darkMode
-                              ? 'bg-green-900/30'
-                              : 'bg-green-50'
-                            : darkMode
-                              ? 'bg-red-900/30'
-                              : 'bg-red-50'
-                        }`}>
-                          {trade.netPL >= 0 ? '📈' : '📉'}
-                          <span className="ml-1">{formatCurrency(trade.netPL)}</span>
-                        </div>
-                      </td>
-                      <td className={`px-6 py-4 text-sm max-w-xs ${
-                        darkMode ? 'text-gray-300' : 'text-gray-600'
-                      }`}>
-                        <div className="truncate" title={trade.notes || 'No notes'}>
-                          {trade.notes || '-'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleEdit(trade)}
-                            className={`p-2 rounded-lg transition-all duration-200 ${
-                              darkMode 
-                                ? 'text-blue-400 hover:text-blue-300 hover:bg-blue-900/30'
-                                : 'text-blue-600 hover:text-blue-900 hover:bg-blue-50'
-                            } transform hover:scale-110`}
-                            title="Edit trade"
-                          >
-                            <EditIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(trade.id)}
-                            className={`p-2 rounded-lg transition-all duration-200 ${
-                              darkMode 
-                                ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30'
-                                : 'text-red-600 hover:text-red-900 hover:bg-red-50'
-                            } transform hover:scale-110`}
-                            title="Delete trade"
-                          >
-                            <Trash2Icon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* Enhanced Trades Section with Pagination and Charts */}
+        <EnhancedTradesSection 
+          trades={trades}
+          darkMode={darkMode}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onAdd={() => setShowAddForm(true)}
+          formatCurrency={formatCurrency}
+        />
           </>
         )}
 
@@ -1204,6 +977,13 @@ export default function SimpleTradingJournal() {
           <MonthlyTargetsComponent 
             trades={trades} 
             userId={currentUser?.uid || ''} 
+            darkMode={darkMode} 
+          />
+        )}
+
+        {/* Position Size Calculator Tab */}
+        {activeTab === 'calculator' && (
+          <PositionSizeCalculator 
             darkMode={darkMode} 
           />
         )}
