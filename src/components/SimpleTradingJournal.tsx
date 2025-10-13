@@ -6,7 +6,7 @@ import {
   CalendarIcon,
   TargetIcon,
   BarChartIcon,
-  DollarSignIcon,
+  DollarSign,
   PieChartIcon,
   TrendingUpIcon as TrendUp,
   TrendingDownIcon as TrendDown,
@@ -17,6 +17,7 @@ import HistoricalAnalyticsComponent from './HistoricalAnalytics';
 import MonthlyTargetsComponent from './MonthlyTargets';
 import PositionSizeCalculator from './PositionSizeCalculator';
 import EnhancedTradesSection from './EnhancedTradesSection';
+import RiskManagement from './RiskManagement';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { 
@@ -26,7 +27,8 @@ import {
   deleteTrade, 
   getPortfolioSummary 
 } from '../services/tradingService';
-import type { Trade } from '../types/trading';
+import type { Trade, Account } from '../types/trading';
+import { createAccount, getUserAccounts } from '../services/accountsService';
 
 interface FormData {
   date: string;
@@ -63,12 +65,17 @@ export default function SimpleTradingJournal() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [currentUser, setCurrentUser] = useState(auth.currentUser);
   const [loading, setLoading] = useState(true);
+  // Accounts
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string | 'all'>('all');
+  const [newAccountName, setNewAccountName] = useState<string>('');
+  const [newAccountCapital, setNewAccountCapital] = useState<string>('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState<'day' | 'week' | 'month'>('day');
-  const [activeTab, setActiveTab] = useState<'journal' | 'analytics' | 'targets' | 'calculator'>('journal');
+  const [activeTab, setActiveTab] = useState<'journal' | 'analytics' | 'targets' | 'calculator' | 'risk'>('journal');
   const [dailyTarget, setDailyTarget] = useState<DailyTarget>({
     dailyPnLTarget: 100,
     dailyTradesTarget: 5,
@@ -99,6 +106,7 @@ export default function SimpleTradingJournal() {
       if (user) {
         loadTrades(user.uid);
         loadPortfolioSummary(user.uid);
+        loadAccounts(user.uid);
       }
     });
     return () => unsubscribe();
@@ -115,6 +123,26 @@ export default function SimpleTradingJournal() {
     }
   };
 
+  // Derived helpers for account filtering
+  const tradesByActiveAccount = activeAccountId === 'all' ? trades : trades.filter(t => t.accountId === activeAccountId);
+
+  const computeSummary = (list: Trade[]) => {
+    const totalTrades = list.length;
+    const totalNetPL = list.reduce((s, t) => s + t.netPL, 0);
+    const totalFees = list.reduce((s, t) => s + t.fees, 0);
+    const winningTrades = list.filter(t => t.netPL > 0).length;
+    const losingTrades = list.filter(t => t.netPL < 0).length;
+    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+    const bestTrade = list.length > 0 ? Math.max(...list.map(t => t.netPL)) : 0;
+    const worstTrade = list.length > 0 ? Math.min(...list.map(t => t.netPL)) : 0;
+    const averageNetPL = totalTrades > 0 ? totalNetPL / totalTrades : 0;
+    return { totalTrades, totalNetPL, totalFees, winningTrades, losingTrades, winRate, bestTrade, worstTrade, averageNetPL } as PortfolioSummary;
+  };
+
+  const displayedSummary: PortfolioSummary | null = trades.length
+    ? computeSummary(tradesByActiveAccount)
+    : (portfolioSummary ? portfolioSummary : null);
+
   // Load portfolio summary
   const loadPortfolioSummary = async (userId: string) => {
     try {
@@ -126,16 +154,45 @@ export default function SimpleTradingJournal() {
     }
   };
 
+  // Load accounts
+  const loadAccounts = async (userId: string) => {
+    try {
+      const list = await getUserAccounts(userId);
+      setAccounts(list);
+      if (list.length && activeAccountId === 'all') {
+        // keep 'all' by default
+      }
+    } catch (e) {
+      console.error('Error loading accounts', e);
+    }
+  };
+
+  const handleCreateCustomAccount = async () => {
+    if (!currentUser) return;
+    const capital = parseFloat(newAccountCapital);
+    if (!isFinite(capital) || capital <= 0) {
+      alert('Please enter a valid positive capital amount');
+      return;
+    }
+    const name = newAccountName.trim() || `Account ${capital.toLocaleString()}`;
+    const id = await createAccount({ userId: currentUser.uid, name, startingBalance: capital, color: '#0ea5e9' });
+    await loadAccounts(currentUser.uid);
+    setActiveAccountId(id);
+    setNewAccountName('');
+    setNewAccountCapital('');
+  };
+
   // Calculate daily statistics
   const calculateDailyStats = (allTrades: Trade[]) => {
+    const byAccount = activeAccountId === 'all' ? allTrades : allTrades.filter(t => t.accountId === activeAccountId);
     const today = new Date().toISOString().split('T')[0];
-    const todayTrades = allTrades.filter(trade => trade.date === today);
+    const todayTrades = byAccount.filter(trade => trade.date === today);
     const currentDayPnL = todayTrades.reduce((sum, trade) => sum + trade.netPL, 0);
     const currentDayTrades = todayTrades.length;
     
     // Calculate streak (simplified version)
     let streak = 0;
-    const sortedTrades = [...allTrades].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sortedTrades = [...byAccount].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     for (const trade of sortedTrades) {
       if (trade.netPL > 0) streak++;
       else break;
@@ -165,34 +222,35 @@ export default function SimpleTradingJournal() {
     }
   }, [portfolioSummary, accountAlertShown]);
 
-  // Get filtered trades based on timeframe
+  // Get filtered trades based on timeframe (and active account)
   const getFilteredTrades = () => {
+    const base = tradesByActiveAccount;
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
     switch (selectedTimeframe) {
       case 'day': {
-        return trades.filter(trade => {
+        return base.filter(trade => {
           const tradeDate = new Date(trade.date);
           return tradeDate >= today;
         });
       }
       case 'week': {
         const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return trades.filter(trade => {
+        return base.filter(trade => {
           const tradeDate = new Date(trade.date);
           return tradeDate >= weekAgo;
         });
       }
       case 'month': {
         const monthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-        return trades.filter(trade => {
+        return base.filter(trade => {
           const tradeDate = new Date(trade.date);
           return tradeDate >= monthAgo;
         });
       }
       default:
-        return trades;
+        return base;
     }
   };
 
@@ -220,6 +278,7 @@ export default function SimpleTradingJournal() {
 
       const tradeData: Omit<Trade, 'id'> = {
         userId: currentUser.uid,
+        accountId: activeAccountId === 'all' ? undefined : activeAccountId,
         date: formData.date,
         symbol: formData.symbol.toUpperCase(),
         type: formData.type,
@@ -339,8 +398,8 @@ export default function SimpleTradingJournal() {
     );
   }
 
-  // Overall P&L mood for background and header emoji
-  const overallPnL = portfolioSummary?.totalNetPL ?? 0;
+  // Overall P&L mood for background and header emoji (per active account)
+  const overallPnL = (displayedSummary?.totalNetPL) ?? 0;
   const rootBgClass = darkMode
     ? (overallPnL >= 0 ? 'bg-gray-900 dark:bg-green-950' : 'bg-gray-900 dark:bg-red-950')
     : (overallPnL >= 0 ? 'bg-green-50' : 'bg-red-50');
@@ -369,7 +428,7 @@ export default function SimpleTradingJournal() {
                 🔥 {dailyTarget.streak} win streak
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3 flex-wrap justify-end">
               {/* Dark Mode Toggle */}
               <button
                 onClick={toggleDarkMode}
@@ -391,6 +450,55 @@ export default function SimpleTradingJournal() {
                 <PlusIcon className="h-5 w-5" />
                 <span>Add Trade</span>
               </button>
+
+              {/* Account Selector */}
+              <div className="flex items-center gap-2">
+                <select
+                  value={activeAccountId}
+                  onChange={(e) => setActiveAccountId(e.target.value)}
+                  className={`px-3 py-2 rounded-lg border text-sm ${
+                    darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'
+                  }`}
+                  title="Select account"
+                >
+                  <option value="all">All Accounts</option>
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name} ({acc.startingBalance.toLocaleString()})</option>
+                  ))}
+                </select>
+
+                {/* Custom account creator */}
+                <input
+                  type="text"
+                  value={newAccountName}
+                  onChange={(e) => setNewAccountName(e.target.value)}
+                  placeholder="Account name"
+                  className={`px-3 py-2 rounded-lg border text-sm ${
+                    darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  }`}
+                  title="Account name"
+                />
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={newAccountCapital}
+                  onChange={(e) => setNewAccountCapital(e.target.value)}
+                  placeholder="Capital ($)"
+                  className={`w-32 px-3 py-2 rounded-lg border text-sm ${
+                    darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  }`}
+                  title="Starting capital"
+                />
+                <button
+                  onClick={handleCreateCustomAccount}
+                  className={`px-3 py-2 rounded-lg text-sm ${
+                    darkMode ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                  title="Create account"
+                >
+                  Add
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -404,13 +512,14 @@ export default function SimpleTradingJournal() {
           <div className="flex flex-wrap gap-2">
             {[
               { id: 'journal', label: '📊 Trading Journal', icon: BarChartIcon },
-              { id: 'analytics', label: '📈 Historical Analytics', icon: ActivityIcon },
-              { id: 'targets', label: '🎯 Monthly Targets', icon: TargetIcon },
-              { id: 'calculator', label: '🧮 Position Calculator', icon: DollarSignIcon }
+              { id: 'analytics', label: '📈 Analytics', icon: ActivityIcon },
+              { id: 'targets', label: '🎯 Targets', icon: TargetIcon },
+              { id: 'calculator', label: '🧮 Calculator', icon: DollarSign },
+              { id: 'risk', label: '🛡️ Risk', icon: ActivityIcon }
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as 'journal' | 'analytics' | 'targets' | 'calculator')}
+                onClick={() => setActiveTab(tab.id as 'journal' | 'analytics' | 'targets' | 'calculator' | 'risk')}
                 className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
                   activeTab === tab.id
                     ? 'bg-blue-600 text-white shadow-md transform scale-105'
@@ -607,7 +716,7 @@ export default function SimpleTradingJournal() {
         </div>
 
         {/* Enhanced Portfolio Summary */}
-        {portfolioSummary && (
+        {displayedSummary && (
           <div className={`rounded-xl shadow-lg border transition-colors duration-300 ${
             darkMode 
               ? 'bg-gray-800 border-gray-700' 
@@ -637,7 +746,7 @@ export default function SimpleTradingJournal() {
                 <div className={`text-2xl font-bold ${
                   darkMode ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {portfolioSummary.totalTrades}
+                  {displayedSummary.totalTrades}
                 </div>
                 <div className={`text-sm ${
                   darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -646,14 +755,14 @@ export default function SimpleTradingJournal() {
               
               <div className="text-center p-4 rounded-lg bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30">
                 <div className="flex justify-center mb-2">
-                  <DollarSignIcon className={`h-8 w-8 ${
-                    portfolioSummary.totalNetPL >= 0 ? 'text-green-500' : 'text-red-500'
+                  <DollarSign className={`h-8 w-8 ${
+                    displayedSummary.totalNetPL >= 0 ? 'text-green-500' : 'text-red-500'
                   }`} />
                 </div>
                 <div className={`text-2xl font-bold ${
-                  portfolioSummary.totalNetPL >= 0 ? 'text-green-600' : 'text-red-600'
+                  displayedSummary.totalNetPL >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {formatCurrency(portfolioSummary.totalNetPL)}
+                  {formatCurrency(displayedSummary.totalNetPL)}
                 </div>
                 <div className={`text-sm ${
                   darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -667,7 +776,7 @@ export default function SimpleTradingJournal() {
                 <div className={`text-2xl font-bold ${
                   darkMode ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {portfolioSummary.winRate.toFixed(1)}%
+                  {displayedSummary.winRate.toFixed(1)}%
                 </div>
                 <div className={`text-sm ${
                   darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -681,7 +790,7 @@ export default function SimpleTradingJournal() {
                 <div className={`text-2xl font-bold ${
                   darkMode ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {formatCurrency(portfolioSummary.totalFees)}
+                  {formatCurrency(displayedSummary.totalFees)}
                 </div>
                 <div className={`text-sm ${
                   darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -694,7 +803,7 @@ export default function SimpleTradingJournal() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
                   <div className={`text-lg font-semibold text-green-500`}>
-                    {formatCurrency(portfolioSummary.bestTrade)}
+                    {formatCurrency(displayedSummary.bestTrade)}
                   </div>
                   <div className={`text-xs ${
                     darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -703,7 +812,7 @@ export default function SimpleTradingJournal() {
                 
                 <div className="text-center">
                   <div className={`text-lg font-semibold text-red-500`}>
-                    {formatCurrency(portfolioSummary.worstTrade)}
+                    {formatCurrency(displayedSummary.worstTrade)}
                   </div>
                   <div className={`text-xs ${
                     darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -712,9 +821,9 @@ export default function SimpleTradingJournal() {
                 
                 <div className="text-center">
                   <div className={`text-lg font-semibold ${
-                    portfolioSummary.averageNetPL >= 0 ? 'text-green-500' : 'text-red-500'
+                    displayedSummary.averageNetPL >= 0 ? 'text-green-500' : 'text-red-500'
                   }`}>
-                    {formatCurrency(portfolioSummary.averageNetPL)}
+                    {formatCurrency(displayedSummary.averageNetPL)}
                   </div>
                   <div className={`text-xs ${
                     darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -725,7 +834,7 @@ export default function SimpleTradingJournal() {
                   <div className={`text-lg font-semibold ${
                     darkMode ? 'text-white' : 'text-gray-900'
                   }`}>
-                    {portfolioSummary.winningTrades}/{portfolioSummary.losingTrades}
+                    {displayedSummary.winningTrades}/{displayedSummary.losingTrades}
                   </div>
                   <div className={`text-xs ${
                     darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -983,9 +1092,10 @@ export default function SimpleTradingJournal() {
 
         {/* Position Size Calculator Tab */}
         {activeTab === 'calculator' && (
-          <PositionSizeCalculator 
-            darkMode={darkMode} 
-          />
+          <PositionSizeCalculator darkMode={darkMode} />
+        )}
+        {activeTab === 'risk' && (
+          <RiskManagement />
         )}
       </div>
     </div>

@@ -9,9 +9,22 @@ export interface Stock {
   lastUpdated?: Date;
 }
 
+// Trading Account
+export interface Account {
+  id: string;
+  userId: string;
+  name: string; // e.g., "Challenge 5k", "Funded 100k"
+  startingBalance: number; // e.g., 5000, 100000
+  color?: string; // UI tag color
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Trade {
   id: string;
   userId: string;
+  // 🧾 Account - trading account identifier
+  accountId?: string;
   
   // 📅 Date - Trading date (string format: "2025-09-29")
   date: string;
